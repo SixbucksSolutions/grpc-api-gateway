@@ -21,15 +21,32 @@ import helloworld_pb2
 import helloworld_pb2_grpc
 
 
-class Greeter(helloworld_pb2_grpc.GreeterServicer):
+class MessageProcessingLambdaSimulator:
+    def create_hello_reply(encoded_hello_msg):
+        print("Got encoded hello message, trying to decode it")
+
+        deserialized_request = helloworld_pb2.HelloRequest.FromString(encoded_hello_msg)
+        
+
+
+        return helloworld_pb2.HelloReply(message="Hello, insert_name_here")
+    
+
+
+class GrpcProxy(helloworld_pb2_grpc.GreeterServicer):
     def SayHello(self, request, context):
-        return helloworld_pb2.HelloReply(message="Hello, %s!" % request.name)
+        logging.info("Got Hello, message, relaying it to the Lambda behind us")
+        recreated_hello_request = helloworld_pb2.HelloRequest(name=request.name)
+        serialized_hello_request_protobuf = helloworld_pb2.HelloRequest.SerializeToString(recreated_hello_request)
+        hello_reply = MessageProcessingLambdaSimulator.create_hello_reply(serialized_hello_request_protobuf)
+        #return helloworld_pb2.HelloReply(message="Hello, %s!" % request.name)
+        return hello_reply
 
 
 def serve():
     port = "50051"
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    helloworld_pb2_grpc.add_GreeterServicer_to_server(Greeter(), server)
+    helloworld_pb2_grpc.add_GreeterServicer_to_server(GrpcProxy(), server)
     server.add_insecure_port("[::]:" + port)
     server.start()
     print("Server started, listening on " + port)
@@ -37,5 +54,5 @@ def serve():
 
 
 if __name__ == "__main__":
-    logging.basicConfig()
+    logging.basicConfig(level=logging.DEBUG)
     serve()
