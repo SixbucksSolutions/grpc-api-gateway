@@ -16,20 +16,28 @@
 from concurrent import futures
 import logging
 
+import base64
 import grpc
 import helloworld_pb2
 import helloworld_pb2_grpc
 
 
 class MessageProcessingLambdaSimulator:
-    def create_hello_reply(encoded_hello_msg):
-        print("Got encoded hello message, trying to decode it")
+    def create_hello_reply(encoded_hello_msg_b64):
+        print(f"Lambda got base64 encoded protobuf: \"{encoded_hello_msg_b64}\"")
 
-        deserialized_request = helloworld_pb2.HelloRequest.FromString(encoded_hello_msg)
-        
+        encoded_hello_msg_protobuf = base64.b64decode(encoded_hello_msg_b64)
+        print(f"Got protobuf-encoded hello message: \"{encoded_hello_msg_protobuf}\"")
 
+        recreated_request = helloworld_pb2.HelloRequest.FromString(encoded_hello_msg_protobuf)
 
-        return helloworld_pb2.HelloReply(message="Hello, insert_name_here")
+        # Creating response object and then serializing it
+        response_object = helloworld_pb2.HelloReply(message="Hello, %s!" % recreated_request.name)
+
+        serialized_response_protobuf = response_object.SerializeToString()
+
+        #return helloworld_pb2.HelloReply(message="Hello, insert_name_here")
+        return serialized_response_protobuf
     
 
 
@@ -37,10 +45,16 @@ class GrpcProxy(helloworld_pb2_grpc.GreeterServicer):
     def SayHello(self, request, context):
         logging.info("Got Hello, message, relaying it to the Lambda behind us")
         recreated_hello_request = helloworld_pb2.HelloRequest(name=request.name)
-        serialized_hello_request_protobuf = helloworld_pb2.HelloRequest.SerializeToString(recreated_hello_request)
-        hello_reply = MessageProcessingLambdaSimulator.create_hello_reply(serialized_hello_request_protobuf)
-        #return helloworld_pb2.HelloReply(message="Hello, %s!" % request.name)
-        return hello_reply
+        #serialized_hello_request_protobuf = helloworld_pb2.HelloRequest.SerializeToString(recreated_hello_request)
+        serialized_hello_request_protobuf = recreated_hello_request.SerializeToString()
+        serialized_hello_request_base64 = base64.b64encode(serialized_hello_request_protobuf).decode("utf-8")
+
+        # Relay the base64 encoded protobuf version of the request to the lambda and get basee64-encoded protobuf reply back
+        hello_reply_protobuf = MessageProcessingLambdaSimulator.create_hello_reply(serialized_hello_request_base64)
+
+        # Turn reply protobuf into a valid object
+        recreated_response = helloworld_pb2.HelloReply.FromString(hello_reply_protobuf)
+        return recreated_response
 
 
 def serve():
