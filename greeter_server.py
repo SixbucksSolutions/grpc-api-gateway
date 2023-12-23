@@ -16,6 +16,8 @@
 from concurrent import futures
 import logging
 
+import json
+
 import base64
 import grpc
 import helloworld_pb2
@@ -27,17 +29,21 @@ class MessageProcessingLambdaSimulator:
         print(f"Lambda got base64 encoded protobuf: \"{encoded_hello_msg_b64}\"")
 
         encoded_hello_msg_protobuf = base64.b64decode(encoded_hello_msg_b64)
-        print(f"Got protobuf-encoded hello message: \"{encoded_hello_msg_protobuf}\"")
+        print(f"Lambda decoded base64 parameter into protobuf-encoded hello message: \"{encoded_hello_msg_protobuf}\"")
 
         recreated_request = helloworld_pb2.HelloRequest.FromString(encoded_hello_msg_protobuf)
 
         # Creating response object and then serializing it
         response_object = helloworld_pb2.HelloReply(message="Hello, %s!" % recreated_request.name)
 
+        print("Created response object (JSON format): " + json.dumps(response_object, indent=4, sort_keys=True, default=str))
+
         serialized_response_protobuf = response_object.SerializeToString()
 
+        serialized_response_base64 = base64.b64encode(serialized_response_protobuf).decode("utf-8")
+
         #return helloworld_pb2.HelloReply(message="Hello, insert_name_here")
-        return serialized_response_protobuf
+        return serialized_response_base64
     
 
 
@@ -50,9 +56,13 @@ class GrpcProxy(helloworld_pb2_grpc.GreeterServicer):
         serialized_hello_request_base64 = base64.b64encode(serialized_hello_request_protobuf).decode("utf-8")
 
         # Relay the base64 encoded protobuf version of the request to the lambda and get basee64-encoded protobuf reply back
-        hello_reply_protobuf = MessageProcessingLambdaSimulator.create_hello_reply(serialized_hello_request_base64)
+        hello_reply_base64 = MessageProcessingLambdaSimulator.create_hello_reply(serialized_hello_request_base64)
+        logging.info(f"Got reply back from Lambda in base64: \"{hello_reply_base64}\"")
 
-        # Turn reply protobuf into a valid object
+        # Decode base64 which will give us raw protobuf
+        hello_reply_protobuf = base64.b64decode(hello_reply_base64)
+
+        # Turn protobuf from lambda into a valid reply object and ship it back out to the client
         recreated_response = helloworld_pb2.HelloReply.FromString(hello_reply_protobuf)
         return recreated_response
 
